@@ -3,7 +3,7 @@ const cors = require("cors");
 const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 require("dotenv").config()
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const app = express();
 
@@ -41,6 +41,31 @@ async function run() {
         const appointmentOptionsCollection = client.db("doctorsPortal").collection('appointmentOptions');
         const bookingsCollection = client.db("doctorsPortal").collection("bookings");
         const usersCollection = client.db("doctorsPortal").collection("users");
+        const doctorsCollection = client.db("doctorsPortal").collection("doctors");
+
+        // NOTE: make sure you use verifyAdmin after verifyJWT
+        const verifyAdmin= async(req,res,next)=>{
+            console.log("indide Decoded Email",req.decoded.email);
+            const decodedEmail = req.decoded.email;
+            const query = { email: decodedEmail }
+            const user = await usersCollection.findOne(query);
+            if (user?.role !== 'admin') {
+                return res.status(403).send({ message: "forbidden access" })
+            }
+            next();
+        }
+
+
+
+         /***
+         * API Naming Convention 
+         * app.get('/bookings')
+         * app.get('/bookings/:id')
+         * app.post('/bookings')
+         * app.patch('/bookings/:id')
+         * app.delete('/bookings/:id')
+        */
+
         // Use Aggregate to query multiple collection and then merge data
         app.get("/appointmentOptions", async(req, res) => {
             const query = {};
@@ -105,24 +130,24 @@ async function run() {
         //     ]).toArray();
         //     res.send(options);
         // })
+//    .........................................Project Query Emplymentation.....................
+        app.get("/appointmentspecialty",async(req,res)=>{
+            const query={}
+            const result=await appointmentOptionsCollection.find(query).project({name:1}).toArray();
+            res.send(result);
+        });
+
+
 
         app.get("/bookings", verifyJWT, async(req, res) => {
-            // const email = req.query.email;
-            // const decodedEmail = req.decoded.email;
-            // console.log("Decoded Email", decodedEmail)
-            // if (email !== decodedEmail) {
-            //     console.log("this is Decoded Email Eoror");
-            //     return res.status(403).send({ message: "forbidden access" })
-            // }
+            
             const email = req.query.email;
             const decodedEmail = req.decoded.email;
 
             if (email !== decodedEmail) {
-                console.log("Email and Decoded Email Not Equal is not Equal")
+               
                 return res.status(403).send({ message: 'forbidden access' });
             }
-
-
 
             const query = { email: email };
             const bookings = await bookingsCollection.find(query).toArray();
@@ -158,19 +183,63 @@ async function run() {
             }
             res.status(403).send({ accessToken: "" })
             console.log(user);
-        })
+        });
 
-        app.get("/dashboard/users", async(req, res) => {
+        app.get("/users", async(req, res) => {
             const query = {};
             const result = await usersCollection.find(query).toArray();
             res.send(result);
 
+        });
+         app.get("/users/admin/:email",async(req,res)=>{
+            const email=req.params.email;
+            const query={email}
+            const user=await usersCollection.findOne(query);
+            res.send({isAdmin:user?.role==='admin'});
+
+         })
+
+        app.put("/users/admin/:id", verifyJWT, verifyAdmin,async(req, res) => {
+            // const decodedEmail = req.decoded.email;
+            // const query = { email: decodedEmail }
+            // const user = await usersCollection.findOne(query);
+            // if (user?.role !== 'admin') {
+            //     return res.status(403).send({ message: "forbidden access" })
+            // }
+            const id = req.params.id;
+            const filter = { _id: ObjectId(id) }
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: {
+                    role: "admin"
+                }
+            }
+            const result = await usersCollection.updateOne(filter, updateDoc, options);
+            res.send(result);
         })
+
 
         app.post("/users", async(req, res) => {
             const user = req.body;
             const result = await usersCollection.insertOne(user);
             res.send(result);
+        });
+        app.get("/doctors",verifyJWT,verifyAdmin ,async(req,res)=>{
+            const query={}
+            const doctors=await doctorsCollection.find(query).toArray();
+            res.send(doctors);
+        });
+        app.delete("/doctors",verifyJWT,verifyAdmin, async(req,res)=>{
+            const email=req.query.email;
+            const query={email}
+            const result=await doctorsCollection.deleteOne(query);
+            res.send(result);
+        })
+        app.post("/doctors",verifyJWT,verifyAdmin, async(req,res)=>{
+            const doctor=req.body;
+            const result= await doctorsCollection.insertOne(doctor);
+            res.send(result);
+
         })
 
     } finally {
